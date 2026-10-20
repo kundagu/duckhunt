@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Тренажёр стендовой стрельбы</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- Главное меню -->
+<div id="menu" class="overlay">
+  <div class="panel">
+    <h1>Тренажёр стендовой стрельбы</h1>
+    <p class="subtitle">Поле · горизонт · небо</p>
+
+    <button id="btn-start" class="btn primary big">Старт</button>
+
+    <h2>Настройки</h2>
+    <div class="row">
+      <label for="sens">Чувствительность мыши</label>
+      <input id="sens" type="range" min="0.2" max="4" step="0.05">
+      <span id="sens-val" class="value">1.00</span>
+    </div>
+    <div class="row">
+      <label for="speed">Скорость тарелочек, км/ч</label>
+      <input id="speed" type="range" min="10" max="80" step="1">
+      <span id="speed-val" class="value">72</span>
+    </div>
+    <div class="row">
+      <label for="sound">Звук</label>
+      <input id="sound" type="checkbox">
+    </div>
+    <div class="row">
+      <label for="hint-aim">Подсказка: подсветка, куда целиться</label>
+      <input id="hint-aim" type="checkbox">
+    </div>
+    <div class="row">
+      <label for="hint-impact">Подсказка: куда попала дробь</label>
+      <input id="hint-impact" type="checkbox">
+    </div>
+
+    <h2>Кнопки управления</h2>
+    <div class="bind-row">
+      <span>Прицеливание (удерживать)</span>
+      <button class="btn bind" data-action="aim">Пробел</button>
+    </div>
+    <div class="bind-row">
+      <span>Выстрел</span>
+      <button class="btn bind" data-action="fire">ЛКМ</button>
+    </div>
+    <div class="bind-row">
+      <span>Перезарядка</span>
+      <button class="btn bind" data-action="reload">ПКМ</button>
+    </div>
+    <p id="bind-hint" class="hint">Нажмите на кнопку, затем клавишу или кнопку мыши. Esc — отмена.</p>
+
+    <div class="row between">
+      <button id="btn-reset" class="btn ghost">Сбросить настройки</button>
+    </div>
+
+    <p class="hint">
+      Дуплекс: первый выстрел — нижний ствол (получок), второй — верхний (чок).<br>
+      Тарелочки 22×5 см, летят вдвое медленнее настройки скорости (визуально вдвое медленнее), зона пролёта — до 30 м от стрелка.<br>
+      Во время игры Esc — пауза.
+    </p>
+  </div>
+</div>
+
+<!-- Пауза -->
+<div id="pause" class="overlay hidden">
+  <div class="panel narrow">
+    <h1>Пауза</h1>
+    <button id="btn-resume" class="btn primary">Продолжить</button>
+    <button id="btn-menu" class="btn">В меню</button>
+    <p id="pause-msg" class="hint"></p>
+  </div>
+</div>
+
+<script src="js/settings.js"></script>
+<script src="js/input.js"></script>
+<script src="js/targets.js"></script>
+<script src="js/ballistics.js"></script>
+<script src="js/render.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
