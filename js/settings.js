@@ -10,6 +10,7 @@
     return {
       sensitivity: 1,
       speed: 72, /* км/ч, базовая скорость тарелочек */
+      shotLimit: 0, /* лимит выстрелов в серии; 0 — безлимит */
       sound: true,
       hintAim: false,
       hintImpact: false,
@@ -80,6 +81,9 @@
     if (typeof s.speed === 'number' && isFinite(s.speed)) {
       out.speed = Math.min(80, Math.max(10, s.speed));
     }
+    if (typeof s.shotLimit === 'number' && isFinite(s.shotLimit)) {
+      out.shotLimit = Math.min(50, Math.max(0, Math.round(s.shotLimit)));
+    }
     if (typeof s.sound === 'boolean') out.sound = s.sound;
     if (typeof s.hintAim === 'boolean') out.hintAim = s.hintAim;
     if (typeof s.hintImpact === 'boolean') out.hintImpact = s.hintImpact;
@@ -110,10 +114,13 @@
     var elSensVal = document.getElementById('sens-val');
     var elSpeed = document.getElementById('speed');
     var elSpeedVal = document.getElementById('speed-val');
+    var elLimit = document.getElementById('limit');
+    var elLimitVal = document.getElementById('limit-val');
     var elSound = document.getElementById('sound');
     var elHintAim = document.getElementById('hint-aim');
     var elHintImpact = document.getElementById('hint-impact');
     var elReset = document.getElementById('btn-reset');
+    var elStatsReset = document.getElementById('btn-stats-reset');
     var bindButtons = Array.prototype.slice.call(document.querySelectorAll('.btn.bind'));
 
     function refresh() {
@@ -121,6 +128,8 @@
       elSensVal.textContent = settings.sensitivity.toFixed(2);
       elSpeed.value = String(settings.speed);
       elSpeedVal.textContent = String(Math.round(settings.speed));
+      elLimit.value = String(settings.shotLimit);
+      elLimitVal.textContent = settings.shotLimit > 0 ? String(settings.shotLimit) : '∞';
       elSound.checked = settings.sound;
       elHintAim.checked = !!settings.hintAim;
       elHintImpact.checked = !!settings.hintImpact;
@@ -138,6 +147,13 @@
     elSpeed.addEventListener('input', function () {
       settings.speed = parseFloat(elSpeed.value) || 72;
       elSpeedVal.textContent = String(Math.round(settings.speed));
+      DH.saveSettings(settings);
+    });
+
+    elLimit.addEventListener('input', function () {
+      var v = Math.round(parseFloat(elLimit.value));
+      settings.shotLimit = Math.min(50, Math.max(0, isFinite(v) ? v : 0));
+      elLimitVal.textContent = settings.shotLimit > 0 ? String(settings.shotLimit) : '∞';
       DH.saveSettings(settings);
     });
 
@@ -160,6 +176,10 @@
       DH.resetSettings();
       settings = DH.settings = DH.defaultSettings();
       refresh();
+    });
+
+    elStatsReset.addEventListener('click', function () {
+      DH.resetStats();
     });
 
     /* Переназначение кнопок */
@@ -222,5 +242,6 @@
     });
 
     refresh();
+    if (DH.updateStats) DH.updateStats();
   };
 })();

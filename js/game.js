@@ -162,11 +162,12 @@
     var dip = (game.H * 0.20) / focal;
     var dir = V3.norm(V3.sub(game.cam.fwd, V3.scale(game.cam.up, dip)));
 
-    /* Подсказка «куда попала дробь»: центр пятна на дистанции ближайшей цели
-       перед стрелком (иначе — на 25 м), с учётом просадки */
+    /* Подсказка выстрела: круг разлёта дроби (на дистанции ближайшей цели
+       перед стрелком, иначе — 25 м) с учётом просадки + кольца упреждения
+       для всех целей в радиусе 15% высоты экрана от точки прицеливания */
     if (DH.settings && DH.settings.hintImpact) {
+      /* Дистанция круга поражения — ближайшая цель в конусе 25° от оси */
       var impD = 25;
-      var impAim = null, impAr = 0.11; /* точка подсказки упреждения на момент выстрела */
       for (var j = 0; j < DH.Targets.list.length; j++) {
         var tg = DH.Targets.list[j];
         if (tg.dead) continue;
@@ -174,20 +175,37 @@
         var along = V3.dot(rl, dir);
         if (along < 1 || along > 80) continue;
         if (along / V3.len(rl) < Math.cos(25 * DEG)) continue; /* цель не дальше 25° от оси */
-        if (along < impD) {
-          impD = along;
-          impAr = tg.radius;
-          /* та же итерация, что у живой подсказки «куда целиться»:
-             упреждение на время долёта + компенсация просадки */
-          var ap = tg.p;
-          for (var q = 0; q < 4; q++) {
-            var atof = V3.dist(ap, origin) / DH.Ballistics.MUZZLE_SPEED;
-            var atg = V3.add(tg.p, V3.scale(tg.v, atof));
-            ap = { x: atg.x, y: atg.y + 0.5 * 9.81 * atof * atof, z: atg.z };
-          }
-          impAim = ap;
-        }
+        if (along < impD) impD = along;
       }
+
+      /* Все цели, чьё экранное положение в момент выстрела находится в радиусе
+         15% высоты экрана от точки прицеливания (W/2, H*0.7) */
+      var aims = [];
+      var cam = game.cam;
+      var aimSX = game.W / 2, aimSY = game.H * 0.7, pickR = game.H * 0.15;
+      for (var m = 0; m < DH.Targets.list.length; m++) {
+        var t2 = DH.Targets.list[m];
+        if (t2.dead) continue;
+        var dx = t2.p.x - cam.pos.x, dy = t2.p.y - cam.pos.y, dz = t2.p.z - cam.pos.z;
+        var zc = dx * cam.fwd.x + dy * cam.fwd.y + dz * cam.fwd.z;
+        if (zc < 0.08) continue; /* цель за камерой или вблизи ближней плоскости */
+        var xc = dx * cam.right.x + dy * cam.right.y + dz * cam.right.z;
+        var yc = dx * cam.up.x + dy * cam.up.y + dz * cam.up.z;
+        var sdx = game.W / 2 + xc / zc * focal - aimSX;
+        var sdy = game.H / 2 - yc / zc * focal - aimSY;
+        if (sdx * sdx + sdy * sdy > pickR * pickR) continue;
+
+        /* та же итерация, что у живой подсказки «куда целиться»:
+           упреждение на время долёта + компенсация просадки */
+        var ap = t2.p;
+        for (var q = 0; q < 4; q++) {
+          var atof = V3.dist(ap, origin) / DH.Ballistics.MUZZLE_SPEED;
+          var atg = V3.add(t2.p, V3.scale(t2.v, atof));
+          ap = { x: atg.x, y: atg.y + 0.5 * 9.81 * atof * atof, z: atg.z };
+        }
+        aims.push({ p: ap, radius: t2.radius });
+      }
+
       var impTof = impD / DH.Ballistics.MUZZLE_SPEED;
       game.impacts.push({
         p: {
@@ -196,8 +214,7 @@
           z: origin.z + dir.z * impD
         },
         radius: DH.Ballistics.patternRadius(barrel, impD),
-        aim: impAim,
-        aimRadius: impAr,
+        aims: aims,
         life: IMPACT_LIFE,
         t: IMPACT_LIFE
       });
@@ -216,18 +233,31 @@
     if (game.ammo === 0) {
       showToast('Два выстрела — перезарядка: ' + DH.bindingLabel(DH.settings.bindings.reload), 2);
     }
+
+    /* Достигнут лимит выстрелов серии: фиксируем статистику и обнуляем счёт */
+    var limit = (DH.settings && DH.settings.shotLimit) | 0;
+    if (limit > 0 && game.shots >= limit) {
+      var rec = DH.recordSeries(game.shots, game.hits);
+      game.shots = 0;
+      game.hits = 0;
+      showToast('Серия окончена: ' + (rec ? rec.hits + '/' + rec.shots + ' (' + Math.round(rec.acc) + '%)' : '') +
+        ' — записана в статистику, счёт обнулён', 3);
+    }
   }
 
   function doReload() {
     if (game.state !== 'playing' || game.reloading) return;
-    /* Перезарядка всегда заряжает оба ствола полностью */
+    /* Перезарядка всегда заряжает оба ствола полностью; ружьё при этом
+       опускается и не поднимается само — только по нажатию прицеливания */
+    game.aimHeld = false;
     game.reloading = true;
     game.reloadTimer = RELOAD_TIME;
     Sound.click();
   }
 
   function setAim(down) {
-    game.aimHeld = !!down;
+    /* Прицеливание — переключатель: нажатие поднимает/опускает ружьё */
+    if (down) game.aimHeld = !game.aimHeld;
   }
 
   function pause() {
@@ -248,6 +278,8 @@
   }
 
   function toMenu() {
+    /* Незавершённая серия фиксируется в статистике при выходе в меню */
+    if (game.shots > 0) DH.recordSeries(game.shots, game.hits);
     game.state = 'menu';
     DH.Input.detach();
     if (document.pointerLockElement === game.canvas && document.exitPointerLock) {
@@ -409,6 +441,19 @@
 
     document.getElementById('btn-resume').addEventListener('click', resume);
     document.getElementById('btn-menu').addEventListener('click', toMenu);
+
+    document.getElementById('btn-reset-results').addEventListener('click', function () {
+      var rec = game.shots > 0 ? DH.recordSeries(game.shots, game.hits) : null;
+      game.shots = 0;
+      game.hits = 0;
+      game.impacts.length = 0;
+      var msg = document.getElementById('pause-msg');
+      if (msg) {
+        msg.textContent = rec
+          ? 'Серия записана (' + rec.hits + '/' + rec.shots + ', ' + Math.round(rec.acc) + '%), счёт обнулён.'
+          : 'Счёт обнулён.';
+      }
+    });
 
     updateCameraBasis();
     requestAnimationFrame(function (t) { last = t; requestAnimationFrame(loop); });

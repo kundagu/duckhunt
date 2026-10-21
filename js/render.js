@@ -232,7 +232,9 @@
     }
   }
 
-  /* Подсказка «куда попала дробь»: центр дробового пятна на дистанции выстрела */
+  /* Подсказка выстрела: круг разлёта дроби (круг поражения) на дистанции
+     выстрела + крестики упреждения целей, попавших в радиус 15% высоты экрана
+     от точки прицеливания в момент выстрела */
   function drawImpacts(ctx, W, H, g) {
     if (!g.impacts || !g.impacts.length) return;
     var cam = g.cam;
@@ -245,38 +247,43 @@
       /* Плавное угасание в течение всей жизни отметки (3 с) */
       var fade = clamp(im.t / (im.life || 3), 0, 1);
       var r = clamp((focal / cp.z) * im.radius, 5, 260);
+
+      /* Площадь разлёта дроби — полупрозральная заливка */
+      ctx.fillStyle = 'rgba(255,165,80,' + (0.10 * fade).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+
+      /* Круг поражения — обводка */
       ctx.strokeStyle = 'rgba(255,165,80,' + (0.9 * fade).toFixed(3) + ')';
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.stroke();
-      /* центр пятна — крестик */
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(p.x - 7, p.y);
-      ctx.lineTo(p.x + 7, p.y);
-      ctx.moveTo(p.x, p.y - 7);
-      ctx.lineTo(p.x, p.y + 7);
-      ctx.stroke();
 
-      /* Точка подсказки упреждения («куда целиться») в момент выстрела —
-         жёлтое призрачное кольцо, как у живой подсказки */
-      if (im.aim) {
-        var tcp = camPoint(im.aim, cam);
-        if (tcp.z >= NEAR) {
-          var tp = projCp(tcp, focal, W / 2, H / 2);
-          var tr = clamp((focal / tcp.z) * (im.aimRadius || 0.11) * 2.2, 16, 220);
-          var ya = (0.85 * fade).toFixed(3);
-          ctx.strokeStyle = 'rgba(255,235,120,' + ya + ')';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(tp.x, tp.y, tr, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.fillStyle = 'rgba(255,235,120,' + ya + ')';
-          ctx.beginPath();
-          ctx.arc(tp.x, tp.y, 2, 0, Math.PI * 2);
-          ctx.fill();
-        }
+      /* Центр пятна */
+      ctx.fillStyle = 'rgba(255,205,150,' + (0.9 * fade).toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      /* Точки упреждения — крестики: окружность здесь вводит в заблуждение,
+         будто совпадение с кругом поражения гарантирует попадание */
+      var aims = im.aims || [];
+      for (var k = 0; k < aims.length; k++) {
+        var tcp = camPoint(aims[k].p, cam);
+        if (tcp.z < NEAR) continue;
+        var tp = projCp(tcp, focal, W / 2, H / 2);
+        /* Размер крестика ~ радиус цели на экране, 6…24 px */
+        var arm = clamp((focal / tcp.z) * aims[k].radius, 6, 24);
+        ctx.strokeStyle = 'rgba(255,235,120,' + (0.9 * fade).toFixed(3) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tp.x - arm, tp.y);
+        ctx.lineTo(tp.x + arm, tp.y);
+        ctx.moveTo(tp.x, tp.y - arm);
+        ctx.lineTo(tp.x, tp.y + arm);
+        ctx.stroke();
       }
     }
   }

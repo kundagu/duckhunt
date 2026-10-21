@@ -12,6 +12,7 @@
 
 <!-- Главное меню -->
 <div id="menu" class="overlay">
+  <div class="menu-wrap">
   <div class="panel">
     <h1>Тренажёр стендовой стрельбы</h1>
     <p class="subtitle">Поле · горизонт · небо</p>
@@ -30,6 +31,11 @@
       <span id="speed-val" class="value">72</span>
     </div>
     <div class="row">
+      <label for="limit">Лимит выстрелов в серии</label>
+      <input id="limit" type="range" min="0" max="50" step="1">
+      <span id="limit-val" class="value">∞</span>
+    </div>
+    <div class="row">
       <label for="sound">Звук</label>
       <input id="sound" type="checkbox">
     </div>
@@ -44,7 +50,7 @@
 
     <h2>Кнопки управления</h2>
     <div class="bind-row">
-      <span>Прицеливание (удерживать)</span>
+      <span>Прицеливание (вкл/выкл)</span>
       <button class="btn bind" data-action="aim">Пробел</button>
     </div>
     <div class="bind-row">
@@ -64,8 +70,19 @@
     <p class="hint">
       Дуплекс: первый выстрел — нижний ствол (получок), второй — верхний (чок).<br>
       Тарелочки 22×5 см, летят вдвое медленнее настройки скорости (визуально вдвое медленнее), зона пролёта — до 30 м от стрелка.<br>
-      Во время игры Esc — пауза.
+      Во время игры Esc — пауза. При достижении лимита выстрелов серия записывается в статистику, а счёт обнуляется.
     </p>
+  </div>
+
+  <!-- Статистика — отдельная панель справа, с собственным скроллом -->
+  <div class="panel stats-panel">
+    <h2>Статистика</h2>
+    <p id="best-line" class="best hidden">Лучший результат: —</p>
+    <div id="stats-list" class="stats-list"></div>
+    <div class="stats-foot">
+      <button id="btn-stats-reset" class="btn ghost">Сбросить статистику</button>
+    </div>
+  </div>
   </div>
 </div>
 
@@ -74,12 +91,14 @@
   <div class="panel narrow">
     <h1>Пауза</h1>
     <button id="btn-resume" class="btn primary">Продолжить</button>
+    <button id="btn-reset-results" class="btn">Обнулить результаты</button>
     <button id="btn-menu" class="btn">В меню</button>
     <p id="pause-msg" class="hint"></p>
   </div>
 </div>
 
 <script src="js/settings.js"></script>
+<script src="js/stats.js"></script>
 <script src="js/input.js"></script>
 <script src="js/targets.js"></script>
 <script src="js/ballistics.js"></script>

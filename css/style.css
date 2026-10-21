@@ -26,13 +26,63 @@ html, body {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
   background: rgba(8, 12, 18, 0.55);
   backdrop-filter: blur(3px);
   z-index: 10;
   overflow: auto;
   padding: 24px 16px;
+}
+
+/* Центрирование без обрезки верха при прокрутке (вместо align-items:center) */
+.overlay > * { margin: auto; }
+
+/* Меню строго по центру экрана, статистика — справа от него.
+   Левый балансир ::before шириной со статистику (300px + зазор 18px с каждой
+   стороны) держит панель меню ровно по центру. */
+.menu-wrap {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  justify-content: center;
+}
+
+.menu-wrap::before {
+  content: '';
+  flex: 0 0 300px;
+}
+
+.menu-wrap .panel { width: auto; }
+.menu-wrap .panel:first-child { flex: 0 1 540px; max-width: 540px; }
+
+.stats-panel {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 48px);
+}
+
+.stats-panel h2 { margin-top: 0; }
+.stats-panel .best { margin-bottom: 10px; }
+
+/* Список серий занимает всё пространство панели между заголовком/лучшим
+   результатом и кнопкой сброса; прокручивается, только если не помещается
+   (min-height:0 обязателен для сжатия flex-элемента) */
+.stats-panel .stats-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+}
+
+.stats-foot { margin-top: auto; padding-top: 12px; }
+
+@media (max-width: 1240px) {
+  .menu-wrap { flex-direction: column; align-items: center; }
+  .menu-wrap::before { display: none; }
+  .menu-wrap .panel { width: 100%; max-width: 540px; }
+  .stats-panel { flex: 0 1 auto; width: 100%; max-width: 540px; }
+  .stats-panel .stats-list { max-height: 40vh; }
 }
 
 .panel {
@@ -43,9 +93,39 @@ html, body {
   border-radius: 14px;
   padding: 28px 30px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  flex: 0 0 auto;
 }
 
 .panel.narrow { max-width: 360px; text-align: center; }
+
+/* Лучший результат — в самом верху меню */
+.best {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffd34d;
+  text-align: center;
+  margin-bottom: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Список серий в статистике */
+.stats-list { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 12px; }
+
+.stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+  color: #c9d4e0;
+  font-variant-numeric: tabular-nums;
+  padding: 5px 9px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+}
+
+.stats-row .muted { color: #8fa3b8; }
+.stats-row .acc { color: #ffb27d; font-weight: 600; }
 
 h1 {
   font-size: 24px;
