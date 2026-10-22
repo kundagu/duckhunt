@@ -45,6 +45,16 @@
     return sdx * sdx + sdy * sdy <= r * r;
   }
 
+  /* Есть ли в зоне мушки хотя бы одна живая цель группы gid. */
+  function groupInAim(list, gid, cam, view) {
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.dead || t.groupId !== gid) continue;
+      if (nearAim(t, cam, view)) return true;
+    }
+    return false;
+  }
+
   /* ---------------- Тарелочки ---------------- */
   var TARGET_RADIUS = 0.11;       /* цель увеличена вдвое: 22 см в диаметре */
   var TARGET_THICKNESS = 0.05;    /* 5 см */
@@ -61,6 +71,16 @@
   var EVADE_AIM_RADIUS = 0.30;    /* радиус зоны у мушки: 30% высоты экрана */
 
   var MAX_ALTITUDE = 30;          /* м — выше цель исчезает */
+
+  /* Групповые цели (опция `flock`): клин из 1–10 тарелочек */
+  var FLOCK_MIN = 1;              /* минимальный размер группы */
+  var FLOCK_MAX = 10;             /* максимальный размер группы */
+  var FLOCK_SMALL_MAX = 5;        /* «малая» группа — до 5 целей */
+  var FLOCK_SMALL_CHANCE = 0.7;   /* доля малых групп (1–5); остальные 6–10 */
+  var FLOCK_SPACING = 2.145;      /* м — шаг в клине (1.43 × 1.5) */
+  var FLOCK_ANGLE = 32 * DEG;     /* полуугол раствора клина (V) */
+  var FLOCK_SKEW = 0.45;          /* макс. случайный перекос клина (доля) */
+  var FLOCK_MIN_ALTITUDE = 10;    /* м — группа всегда появляется выше */
 
   var MODE_WEIGHTS = [
     { mode: 'to', w: 18 },        /* на стрелка, через голову */
@@ -97,6 +117,8 @@
       evadeH: 0,                       /* горизонтальная скорость при уклонении */
       evadeBaseYaw: 0,                 /* исходный курс до уклонения */
       evadeBasePitch: 0,               /* исходный угол набора высоты */
+      groupId: 0,                      /* номер группы (0 — вне группы) */
+      evadeTurnSign: 1,                /* сторона доворота (единая в группе) */
       px: [],                          /* история позиций для шлейфа */
       dead: false
     };
@@ -207,21 +229,130 @@
     return makeTarget(p, v, life, mode);
   }
 
+  /* Групповые цели: клин (V) из 1–10 тарелочек в направлении движения.
+     Ведущая цель впереди, ведомые — позади и в стороны под полууглом
+     FLOCK_ANGLE. Клин не всегда симметричен: общий перекос группы
+     (skew) и небольшой независимый сдвиг каждой ведомой цели. */
+  function spawnGroup(cam) {
+    /* Размер группы: 70% — малые (1–5), 30% — большие (6–10);
+       внутри диапазона равновероятно. */
+    var lo, hi;
+    if (Math.random() < FLOCK_SMALL_CHANCE) {
+      lo = FLOCK_MIN; hi = FLOCK_SMALL_MAX;
+    } else {
+      lo = FLOCK_SMALL_MAX + 1; hi = FLOCK_MAX;
+    }
+    var n = lo + Math.floor(Math.random() * (hi - lo + 1));
+    var lead = spawn(cam);
+    var group = [lead];
+
+    var hs = Math.sqrt(lead.v.x * lead.v.x + lead.v.z * lead.v.z);
+    /* Направление движения в горизонтальной плоскости */
+    var fwd = hs > 1e-6
+      ? { x: lead.v.x / hs, y: 0, z: lead.v.z / hs }
+      : { x: 0, y: 0, z: 1 };
+    /* Боковая ось (перпендикуляр в плоскости XZ) */
+    var side = { x: fwd.z, y: 0, z: -fwd.x };
+
+    /* Общий перекос группы: смещает клин влево/вправо — асимметрия */
+    var skewX = rand(-FLOCK_SKEW, FLOCK_SKEW);
+    var skewY = rand(-FLOCK_SKEW, FLOCK_SKEW);
+
+    for (var i = 1; i < n; i++) {
+      var row = Math.ceil(i / 2);                 /* номер «волны» позади лидера */
+      var sideSign = i % 2 === 1 ? 1 : -1;        /* попеременно в стороны */
+
+      /* Базовая позиция в клине: назад по курсу + вбок под углом */
+      var back = row * FLOCK_SPACING * Math.cos(FLOCK_ANGLE);
+      var lat = sideSign * row * FLOCK_SPACING * Math.sin(FLOCK_ANGLE);
+
+      /* Перекос и лёгкий индивидуальный разброс — клин не идеальный */
+      var jitter = FLOCK_SPACING * 0.25;
+      var p = {
+        x: lead.p.x - fwd.x * back + side.x * lat + rand(-jitter, jitter) + side.x * skewX * row,
+        y: lead.p.y + rand(-jitter, jitter) + skewY * row,
+        z: lead.p.z - fwd.z * back + side.z * lat + rand(-jitter, jitter) + side.z * skewX * row
+      };
+      var mate = makeTarget(p, { x: lead.v.x, y: lead.v.y, z: lead.v.z }, lead.life, lead.mode);
+      group.push(mate);
+    }
+
+    /* Синхронизируем внешний вид: одинаковый наклон и вращение диска
+       у всей группы (как у ведущей). */
+    for (i = 1; i < group.length; i++) {
+      group[i].bank = lead.bank;
+      group[i].spin = lead.spin;
+    }
+
+    /* Вписываем всю группу в 30-метровую зону: если хвост клина вышел
+       за 28 м, подтягиваем каждую цель к стрелку по её направлению. */
+    var maxR = 0;
+    for (i = 0; i < group.length; i++) {
+      var rr = Math.sqrt(group[i].p.x * group[i].p.x + group[i].p.z * group[i].p.z);
+      if (rr > maxR) maxR = rr;
+    }
+    if (maxR > 28) {
+      var k = 28 / maxR;
+      for (i = 0; i < group.length; i++) {
+        group[i].p.x *= k;
+        group[i].p.z *= k;
+      }
+    }
+
+    /* Группа всегда появляется выше 10 м над землёй: поднимаем весь клин
+       так, чтобы самая низкая цель была не ниже FLOCK_MIN_ALTITUDE. */
+    var minY = Infinity;
+    for (i = 0; i < group.length; i++) {
+      if (group[i].p.y < minY) minY = group[i].p.y;
+    }
+    var rise = (FLOCK_MIN_ALTITUDE + 0.5) - minY;
+    if (rise > 0) {
+      for (i = 0; i < group.length; i++) group[i].p.y += rise;
+    }
+
+    return group;
+  }
+
+  var nextGroupId = 1;
+
   /* ---------------- Уклонение ---------------- */
 
   /* Плавно уводит цель по горизонтали от стрелка; часть целей
-     дополнительно набирает высоту (доля — EVADE_UP_CHANCE). */
-  function evade(target, cam, dt) {
+     дополнительно набирает высоту (доля — EVADE_UP_CHANCE).
+     shared — общие параметры группы (или null): для групповых целей
+     решение «вверх», базовый курс и предел подъёма одинаковы у всех. */
+  function evade(target, cam, dt, shared) {
     /* При переходе к уклонению один раз снижаем скорость и запоминаем
        исходное направление: горизонталь — до 47%, вертикаль — до 60%
        (вертикаль — только для уклоняющихся вверх) */
     if (!target.evadeApplied) {
       target.evadeApplied = true;
-      target.evadeUp = Math.random() < EVADE_UP_CHANCE;
+
       var baseHs = Math.sqrt(target.v.x * target.v.x + target.v.z * target.v.z);
       target.evadeBaseYaw = Math.atan2(target.v.x, target.v.z);
       target.evadeBasePitch = baseHs > 1e-6 ? Math.atan2(target.v.y, baseHs) : 0;
       target.evadeH = baseHs * EVADE_HORIZONTAL_FACTOR;
+
+      if (shared) {
+        /* Первое срабатывание группы: фиксируем общие параметры по якорю */
+        if (!shared.done) {
+          shared.done = true;
+          shared.up = Math.random() < EVADE_UP_CHANCE;
+          shared.basePitch = target.evadeBasePitch;
+          shared.baseYaw = target.evadeBaseYaw;
+          /* Сторона доворота: в сторону «от стрелка», общая для группы */
+          var awayA = Math.atan2(target.p.x - cam.pos.x, target.p.z - cam.pos.z);
+          shared.turnSign = wrapAngle(awayA - target.evadeBaseYaw) >= 0 ? 1 : -1;
+        }
+        target.evadeUp = shared.up;
+        target.evadeBasePitch = shared.basePitch;
+        target.evadeBaseYaw = shared.baseYaw;
+        target.evadeTurnSign = shared.turnSign;
+      } else {
+        target.evadeUp = Math.random() < EVADE_UP_CHANCE;
+        target.evadeTurnSign = Math.random() < 0.5 ? -1 : 1;
+      }
+
       if (target.evadeUp) target.v.y *= EVADE_VERTICAL_FACTOR;
     }
 
@@ -231,12 +362,13 @@
 
     /* Горизонтальный поворот — не более 60° от исходного курса.
        Вблизи вертикали над стрелком азимут «от стрелка» неустойчив —
-       направление не меняем. */
+       направление не меняем. Члены группы поворачивают в одну сторону. */
     var hs = target.evadeH;
     if (hs > 1e-3) {
       var cur = Math.atan2(target.v.x, target.v.z);
       if (flat > 0.5) {
         var diff = wrapAngle(Math.atan2(dx, dz) - cur);
+        if (target.groupId > 0) diff = target.evadeTurnSign * Math.abs(diff);
         var maxTurn = EVADE_TURN_RATE * dt;
         cur += diff > maxTurn ? maxTurn : diff < -maxTurn ? -maxTurn : diff;
       }
@@ -313,20 +445,50 @@
       var i, t;
       var list = this.list;
 
-      /* Спавн */
+      /* Спавн: групповая — только когда небо пустое; одиночные — как раньше */
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && list.length < 3) {
-        list.push(spawn(cam));
+      var useFlock = !!(DH.settings && DH.settings.flock);
+      var canSpawn = useFlock ? list.length === 0 : list.length < 3;
+      if (this.spawnTimer <= 0 && canSpawn) {
+        if (useFlock) {
+          var gid = nextGroupId++;
+          var group = spawnGroup(cam);
+          for (i = 0; i < group.length; i++) {
+            group[i].groupId = gid;
+            list.push(group[i]);
+          }
+        } else {
+          list.push(spawn(cam));
+        }
         this.spawnTimer = rand(1.0, 2.6);
       }
 
+      /* Синхронное уклонение групп: если хоть одна цель группы в зоне
+         мушки — уклоняется вся группа. Общие параметры фиксируются
+         один раз в кадре первого срабатывания. */
+      var flockShared = {};
+      if (evadeTargets) {
+        for (i = 0; i < list.length; i++) {
+          t = list[i];
+          if (t.groupId > 0 && !flockShared[t.groupId] && groupInAim(list, t.groupId, cam, view)) {
+            flockShared[t.groupId] = { done: false };
+          }
+        }
+      }
       /* Движение и отсев */
       for (i = list.length - 1; i >= 0; i--) {
         t = list[i];
         if (t.dead) { list.splice(i, 1); continue; }
         t.age += dt;
-        /* Уклоняются только цели в зоне у мушки (30% высоты экрана) */
-        if (evadeTargets && nearAim(t, cam, view)) evade(t, cam, dt);
+        /* Уклоняются только цели в зоне у мушки (30% высоты экрана).
+           Групповые — целиком, если хотя бы одна из них в зоне. */
+        if (evadeTargets) {
+          if (t.groupId > 0) {
+            if (flockShared[t.groupId]) evade(t, cam, dt, flockShared[t.groupId]);
+          } else if (nearAim(t, cam, view)) {
+            evade(t, cam, dt, null);
+          }
+        }
         t.p.x += t.v.x * dt;
         t.p.y += t.v.y * dt;
         t.p.z += t.v.z * dt;

@@ -15,6 +15,7 @@
       hintAim: false,
       hintImpact: false,
       evasion: false, /* цели уклоняются, пока оружие поднято */
+      flock: false, /* групповые цели: клин из 1–10 тарелочек */
       bindings: {
         aim: { type: 'key', code: 'Space' },
         fire: { type: 'mouse', button: 0 },
@@ -89,6 +90,7 @@
     if (typeof s.hintAim === 'boolean') out.hintAim = s.hintAim;
     if (typeof s.hintImpact === 'boolean') out.hintImpact = s.hintImpact;
     if (typeof s.evasion === 'boolean') out.evasion = s.evasion;
+    if (typeof s.flock === 'boolean') out.flock = s.flock;
     if (s.bindings && typeof s.bindings === 'object') {
       ['aim', 'fire', 'reload'].forEach(function (act) {
         var b = validBinding(s.bindings[act]);
@@ -122,6 +124,7 @@
     var elHintAim = document.getElementById('hint-aim');
     var elHintImpact = document.getElementById('hint-impact');
     var elEvasion = document.getElementById('evasion');
+    var elFlock = document.getElementById('flock');
     var elReset = document.getElementById('btn-reset');
     var elStatsReset = document.getElementById('btn-stats-reset');
     var bindButtons = Array.prototype.slice.call(document.querySelectorAll('.btn.bind'));
@@ -137,6 +140,7 @@
       elHintAim.checked = !!settings.hintAim;
       elHintImpact.checked = !!settings.hintImpact;
       elEvasion.checked = !!settings.evasion;
+      elFlock.checked = !!settings.flock;
       bindButtons.forEach(function (btn) {
         btn.textContent = DH.bindingLabel(settings.bindings[btn.dataset.action]);
       });
@@ -178,6 +182,11 @@
 
     elEvasion.addEventListener('change', function () {
       settings.evasion = elEvasion.checked;
+      DH.saveSettings(settings);
+    });
+
+    elFlock.addEventListener('change', function () {
+      settings.flock = elFlock.checked;
       DH.saveSettings(settings);
     });
 
