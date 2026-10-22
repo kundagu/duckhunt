@@ -22,9 +22,45 @@
 
   function rand(a, b) { return a + Math.random() * (b - a); }
 
+  function wrapAngle(a) {
+    while (a > Math.PI) a -= 2 * Math.PI;
+    while (a < -Math.PI) a += 2 * Math.PI;
+    return a;
+  }
+
+  /* Попадает ли цель в круг радиусом 30% высоты экрана вокруг мушки
+     (точка прицеливания — центр экрана, на 20% высоты ниже центра).
+     view = { W, H, focal }. Без view считаем, что цель в зоне. */
+  function nearAim(t, cam, view) {
+    if (!view || !view.focal) return true;
+    var dx = t.p.x - cam.pos.x, dy = t.p.y - cam.pos.y, dz = t.p.z - cam.pos.z;
+    var zc = dx * cam.fwd.x + dy * cam.fwd.y + dz * cam.fwd.z;
+    if (zc < 0.08) return false; /* цель за камерой или у ближней плоскости */
+    var xc = dx * cam.right.x + dy * cam.right.y + dz * cam.right.z;
+    var yc = dx * cam.up.x + dy * cam.up.y + dz * cam.up.z;
+    var aimSX = view.W / 2, aimSY = view.H * 0.7;
+    var sdx = view.W / 2 + xc / zc * view.focal - aimSX;
+    var sdy = view.H / 2 - yc / zc * view.focal - aimSY;
+    var r = view.H * EVADE_AIM_RADIUS;
+    return sdx * sdx + sdy * sdy <= r * r;
+  }
+
   /* ---------------- Тарелочки ---------------- */
   var TARGET_RADIUS = 0.11;       /* цель увеличена вдвое: 22 см в диаметре */
   var TARGET_THICKNESS = 0.05;    /* 5 см */
+
+  /* Уклонение при поднятом оружии: поворот от стрелка + набор высоты */
+  var EVADE_TURN_RATE = 1.54;     /* рад/с — 1.4 + 10% интенсивности поворота */
+  var EVADE_CLIMB_ACCEL = 4.5;    /* м/с² */
+  var EVADE_MAX_CLIMB = 5.5;      /* м/с (до снижения) */
+  var EVADE_HORIZONTAL_FACTOR = 0.47; /* 47% исходной горизонтальной скорости */
+  var EVADE_VERTICAL_FACTOR = 0.6;    /* 60% исходной вертикальной скорости */
+  var EVADE_HORIZONTAL_LIMIT = 60 * DEG; /* макс. отклонение по горизонтали */
+  var EVADE_VERTICAL_LIMIT = 20 * DEG;   /* макс. отклонение по вертикали */
+  var EVADE_UP_CHANCE = 0.4;      /* доля уклоняющихся, которые набирают высоту */
+  var EVADE_AIM_RADIUS = 0.30;    /* радиус зоны у мушки: 30% высоты экрана */
+
+  var MAX_ALTITUDE = 30;          /* м — выше цель исчезает */
 
   var MODE_WEIGHTS = [
     { mode: 'to', w: 18 },        /* на стрелка, через голову */
@@ -56,6 +92,11 @@
       thickness: TARGET_THICKNESS,
       bank: rand(-0.45, 0.45),        /* наклон диска для отрисовки */
       spin: rand(-1.2, 1.2),
+      evadeApplied: false,             /* скоростное снижение уже применено */
+      evadeUp: false,                  /* уклоняется вверх (иначе только по горизонтали) */
+      evadeH: 0,                       /* горизонтальная скорость при уклонении */
+      evadeBaseYaw: 0,                 /* исходный курс до уклонения */
+      evadeBasePitch: 0,               /* исходный угол набора высоты */
       px: [],                          /* история позиций для шлейфа */
       dead: false
     };
@@ -166,6 +207,65 @@
     return makeTarget(p, v, life, mode);
   }
 
+  /* ---------------- Уклонение ---------------- */
+
+  /* Плавно уводит цель по горизонтали от стрелка; часть целей
+     дополнительно набирает высоту (доля — EVADE_UP_CHANCE). */
+  function evade(target, cam, dt) {
+    /* При переходе к уклонению один раз снижаем скорость и запоминаем
+       исходное направление: горизонталь — до 47%, вертикаль — до 60%
+       (вертикаль — только для уклоняющихся вверх) */
+    if (!target.evadeApplied) {
+      target.evadeApplied = true;
+      target.evadeUp = Math.random() < EVADE_UP_CHANCE;
+      var baseHs = Math.sqrt(target.v.x * target.v.x + target.v.z * target.v.z);
+      target.evadeBaseYaw = Math.atan2(target.v.x, target.v.z);
+      target.evadeBasePitch = baseHs > 1e-6 ? Math.atan2(target.v.y, baseHs) : 0;
+      target.evadeH = baseHs * EVADE_HORIZONTAL_FACTOR;
+      if (target.evadeUp) target.v.y *= EVADE_VERTICAL_FACTOR;
+    }
+
+    var dx = target.p.x - cam.pos.x;
+    var dz = target.p.z - cam.pos.z;
+    var flat = Math.sqrt(dx * dx + dz * dz);
+
+    /* Горизонтальный поворот — не более 60° от исходного курса.
+       Вблизи вертикали над стрелком азимут «от стрелка» неустойчив —
+       направление не меняем. */
+    var hs = target.evadeH;
+    if (hs > 1e-3) {
+      var cur = Math.atan2(target.v.x, target.v.z);
+      if (flat > 0.5) {
+        var diff = wrapAngle(Math.atan2(dx, dz) - cur);
+        var maxTurn = EVADE_TURN_RATE * dt;
+        cur += diff > maxTurn ? maxTurn : diff < -maxTurn ? -maxTurn : diff;
+      }
+      var rel = wrapAngle(cur - target.evadeBaseYaw);
+      if (rel > EVADE_HORIZONTAL_LIMIT) rel = EVADE_HORIZONTAL_LIMIT;
+      else if (rel < -EVADE_HORIZONTAL_LIMIT) rel = -EVADE_HORIZONTAL_LIMIT;
+      cur = target.evadeBaseYaw + rel;
+      target.v.x = Math.sin(cur) * hs;
+      target.v.z = Math.cos(cur) * hs;
+    }
+
+    /* Вертикальный угол — не более 20° от исходного. Предел подъёма
+       зависит от горизонтальной скорости и исходного угла траектории.
+       Только для целей, уклоняющихся вверх; остальные сохраняют
+       вертикальную скорость без изменений. */
+    if (target.evadeUp) {
+      var maxPitch = target.evadeBasePitch + EVADE_VERTICAL_LIMIT;
+      var maxClimb = Math.min(
+        EVADE_MAX_CLIMB * EVADE_VERTICAL_FACTOR,
+        hs * Math.tan(maxPitch)
+      );
+      if (maxClimb < 0) maxClimb = 0;
+      if (target.v.y > maxClimb) target.v.y = maxClimb;
+      if (target.v.y < maxClimb) {
+        target.v.y = Math.min(maxClimb, target.v.y + EVADE_CLIMB_ACCEL * dt);
+      }
+    }
+  }
+
   /* ---------------- Разрушение ---------------- */
   function breakTarget(particles, target) {
     var n = 16;
@@ -209,7 +309,7 @@
       breakTarget(this.particles, target);
     },
 
-    update: function (dt, cam) {
+    update: function (dt, cam, evadeTargets, view) {
       var i, t;
       var list = this.list;
 
@@ -225,15 +325,17 @@
         t = list[i];
         if (t.dead) { list.splice(i, 1); continue; }
         t.age += dt;
+        /* Уклоняются только цели в зоне у мушки (30% высоты экрана) */
+        if (evadeTargets && nearAim(t, cam, view)) evade(t, cam, dt);
         t.p.x += t.v.x * dt;
         t.p.y += t.v.y * dt;
         t.p.z += t.v.z * dt;
         t.bank += t.spin * dt * 0.15;
 
         var rel = V3.sub(t.p, cam.pos);
-        /* Цель не исчезает, пока не вылетит из 30-метровой зоны */
+        /* Цель исчезает при вылете из 30-метровой зоны или подъёме выше 30 м */
         var flat = Math.sqrt(rel.x * rel.x + rel.z * rel.z);
-        if (flat > 30.5) {
+        if (flat > 30.5 || t.p.y > MAX_ALTITUDE) {
           list.splice(i, 1);
           continue;
         }

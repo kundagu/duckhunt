@@ -8,6 +8,7 @@
   var NEAR = 0.08;
   var COORD_MAX = 1e5;
   var G_ACC = 9.81;
+  var HALF_PI = Math.PI / 2;
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 
@@ -46,7 +47,16 @@
   /* ---------------- Небо и поле ---------------- */
 
   function drawBackground(ctx, W, H, cam, focal, cx, cy) {
-    var horizonY = cy + Math.tan(cam.pitch) * focal;
+    var horizonY;
+    if (cam.pitch > HALF_PI) {
+      /* Взгляд выше зенита: земля остаётся позади, видно только небо */
+      horizonY = H;
+    } else if (cam.pitch < -HALF_PI) {
+      /* Взгляд ниже надира: видно только поле */
+      horizonY = -1;
+    } else {
+      horizonY = cy + Math.tan(cam.pitch) * focal;
+    }
 
     if (horizonY > -H) {
       var top = Math.min(horizonY, H);

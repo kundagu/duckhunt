@@ -14,6 +14,7 @@
       sound: true,
       hintAim: false,
       hintImpact: false,
+      evasion: false, /* цели уклоняются, пока оружие поднято */
       bindings: {
         aim: { type: 'key', code: 'Space' },
         fire: { type: 'mouse', button: 0 },
@@ -87,6 +88,7 @@
     if (typeof s.sound === 'boolean') out.sound = s.sound;
     if (typeof s.hintAim === 'boolean') out.hintAim = s.hintAim;
     if (typeof s.hintImpact === 'boolean') out.hintImpact = s.hintImpact;
+    if (typeof s.evasion === 'boolean') out.evasion = s.evasion;
     if (s.bindings && typeof s.bindings === 'object') {
       ['aim', 'fire', 'reload'].forEach(function (act) {
         var b = validBinding(s.bindings[act]);
@@ -119,6 +121,7 @@
     var elSound = document.getElementById('sound');
     var elHintAim = document.getElementById('hint-aim');
     var elHintImpact = document.getElementById('hint-impact');
+    var elEvasion = document.getElementById('evasion');
     var elReset = document.getElementById('btn-reset');
     var elStatsReset = document.getElementById('btn-stats-reset');
     var bindButtons = Array.prototype.slice.call(document.querySelectorAll('.btn.bind'));
@@ -133,6 +136,7 @@
       elSound.checked = settings.sound;
       elHintAim.checked = !!settings.hintAim;
       elHintImpact.checked = !!settings.hintImpact;
+      elEvasion.checked = !!settings.evasion;
       bindButtons.forEach(function (btn) {
         btn.textContent = DH.bindingLabel(settings.bindings[btn.dataset.action]);
       });
@@ -169,6 +173,11 @@
 
     elHintImpact.addEventListener('change', function () {
       settings.hintImpact = elHintImpact.checked;
+      DH.saveSettings(settings);
+    });
+
+    elEvasion.addEventListener('change', function () {
+      settings.evasion = elEvasion.checked;
       DH.saveSettings(settings);
     });
 

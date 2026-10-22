@@ -10,6 +10,8 @@
   var MOUSE_SCALE = 0.0022; /* рад на пиксель при чувствительности 1 */
   var RELOAD_TIME = 0.95;    /* с */
   var IMPACT_LIFE = 3;       /* с — время жизни отметки «куда попала дробь» */
+  /* Предел тангажа: прежние 83° увеличены на 10% (83 * 1.1 = 91.3°) */
+  var PITCH_LIMIT = 83 * DEG * 1.1;
 
   /* ---------------- Звук ---------------- */
   var Sound = {
@@ -374,11 +376,16 @@
     }
 
     /* Ограничение наклона */
-    if (game.cam.pitch > 83 * DEG) game.cam.pitch = 83 * DEG;
-    if (game.cam.pitch < -83 * DEG) game.cam.pitch = -83 * DEG;
+    if (game.cam.pitch > PITCH_LIMIT) game.cam.pitch = PITCH_LIMIT;
+    if (game.cam.pitch < -PITCH_LIMIT) game.cam.pitch = -PITCH_LIMIT;
 
     updateCameraBasis();
-    DH.Targets.update(dt, game.cam);
+    var focal = (game.H / 2) / Math.tan(game.fov / 2);
+    DH.Targets.update(
+      dt, game.cam,
+      !!(DH.settings && DH.settings.evasion && game.aimHeld),
+      { W: game.W, H: game.H, focal: focal }
+    );
   }
 
   function updateMenuCamera(dt) {
