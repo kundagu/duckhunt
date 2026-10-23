@@ -72,15 +72,26 @@
 
   var MAX_ALTITUDE = 30;          /* м — выше цель исчезает */
 
+  /* Доля налётов, которые появляются сзади (за спиной игрока):
+     азимут спавна отсчитывается от направления «спиной к взгляду». */
+  var REAR_CHANCE = 0.3; /* не больше 30% */
+
   /* Групповые цели (опция `flock`): клин из 1–10 тарелочек */
   var FLOCK_MIN = 1;              /* минимальный размер группы */
   var FLOCK_MAX = 10;             /* максимальный размер группы */
-  var FLOCK_SMALL_MAX = 5;        /* «малая» группа — до 5 целей */
-  var FLOCK_SMALL_CHANCE = 0.7;   /* доля малых групп (1–5); остальные 6–10 */
   var FLOCK_SPACING = 2.145;      /* м — шаг в клине (1.43 × 1.5) */
   var FLOCK_ANGLE = 32 * DEG;     /* полуугол раствора клина (V) */
   var FLOCK_SKEW = 0.45;          /* макс. случайный перекос клина (доля) */
   var FLOCK_MIN_ALTITUDE = 10;    /* м — группа всегда появляется выше */
+
+  /* Вероятность спавна группы обратно пропорциональна её размеру: вес 1/n.
+     После нормировки одиночная цель выпадает примерно в 34% случаев,
+     группа из 10 — примерно в 3,4% (ровно в 10 раз реже). */
+  var FLOCK_SIZE_WEIGHTS = (function () {
+    var w = [], i;
+    for (i = FLOCK_MIN; i <= FLOCK_MAX; i++) w.push(1 / i);
+    return w;
+  })();
 
   var MODE_WEIGHTS = [
     { mode: 'to', w: 18 },        /* на стрелка, через голову */
@@ -102,6 +113,18 @@
       if (r <= 0) return MODE_WEIGHTS[i].mode;
     }
     return 'parallel';
+  }
+
+  /* Размер группы: вероятности пропорциональны весам 1/n. */
+  function pickGroupSize() {
+    var total = 0, i;
+    for (i = 0; i < FLOCK_SIZE_WEIGHTS.length; i++) total += FLOCK_SIZE_WEIGHTS[i];
+    var r = Math.random() * total;
+    for (i = 0; i < FLOCK_SIZE_WEIGHTS.length; i++) {
+      r -= FLOCK_SIZE_WEIGHTS[i];
+      if (r <= 0) return FLOCK_MIN + i;
+    }
+    return FLOCK_MAX;
   }
 
   function makeTarget(p, v, life, mode) {
@@ -133,7 +156,13 @@
   }
 
   function spawn(cam) {
-    var mode = pickMode();
+    /* Налёт появляется в переднем секторе (±45° от взгляда) или, с
+       вероятностью REAR_CHANCE, сзади — в секторе ±45° за спиной.
+       Задний налёт всегда идёт на стрелка и проходит над головой,
+       чтобы после сближения попасть в поле зрения. */
+    var rear = Math.random() < REAR_CHANCE;
+    var baseYaw = rear ? cam.yaw + Math.PI : cam.yaw;
+    var mode = rear ? 'to' : pickMode();
     /* Скорость из настроек (км/ч) с разбросом ±2,5 км/ч (в пределах диапазона 10–80) */
     var baseSpeed = (DH.settings && typeof DH.settings.speed === 'number') ? DH.settings.speed : 72;
     /* Визуально вдвое медленнее: фактическая скорость тарелочки = половина настройки */
@@ -144,10 +173,11 @@
     var p, v, life = 9, attempt, off, wy, r, t;
     var ca, sa, d, L, c, y, b, elev, hd, mix, D, phi;
 
-    /* Все налёты начинаются строго в секторе ±45° от направления взгляда */
+    /* Все налёты начинаются в секторе ±45° от выбранного направления:
+       переднего или заднего (за спиной). */
     for (attempt = 0; attempt < 30; attempt++) {
       off = rand(-45, 45) * DEG;
-      wy = cam.yaw + off;
+      wy = baseYaw + off;
       r = { x: Math.sin(wy), y: 0, z: Math.cos(wy) };   /* радиальное */
       t = { x: r.z * sgn, y: 0, z: -r.x * sgn };        /* касательное */
 
@@ -224,7 +254,7 @@
           life = mode === 'climb30' ? 6 : 8;
           break;
       }
-      if (azimuthOk(p, cam.yaw)) break;
+      if (azimuthOk(p, baseYaw)) break;
     }
     return makeTarget(p, v, life, mode);
   }
@@ -234,15 +264,8 @@
      FLOCK_ANGLE. Клин не всегда симметричен: общий перекос группы
      (skew) и небольшой независимый сдвиг каждой ведомой цели. */
   function spawnGroup(cam) {
-    /* Размер группы: 70% — малые (1–5), 30% — большие (6–10);
-       внутри диапазона равновероятно. */
-    var lo, hi;
-    if (Math.random() < FLOCK_SMALL_CHANCE) {
-      lo = FLOCK_MIN; hi = FLOCK_SMALL_MAX;
-    } else {
-      lo = FLOCK_SMALL_MAX + 1; hi = FLOCK_MAX;
-    }
-    var n = lo + Math.floor(Math.random() * (hi - lo + 1));
+    /* Вероятность группы обратно пропорциональна её размеру: вес 1/n. */
+    var n = pickGroupSize();
     var lead = spawn(cam);
     var group = [lead];
 

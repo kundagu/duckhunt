@@ -449,18 +449,21 @@
     document.getElementById('btn-resume').addEventListener('click', resume);
     document.getElementById('btn-menu').addEventListener('click', toMenu);
 
-    document.getElementById('btn-reset-results').addEventListener('click', function () {
-      var rec = game.shots > 0 ? DH.recordSeries(game.shots, game.hits) : null;
-      game.shots = 0;
-      game.hits = 0;
-      game.impacts.length = 0;
-      var msg = document.getElementById('pause-msg');
-      if (msg) {
-        msg.textContent = rec
-          ? 'Серия записана (' + rec.hits + '/' + rec.shots + ', ' + Math.round(rec.acc) + '%), счёт обнулён.'
-          : 'Счёт обнулён.';
-      }
-    });
+    var btnResetResults = document.getElementById('btn-reset-results');
+    if (btnResetResults) {
+      btnResetResults.addEventListener('click', function () {
+        var rec = game.shots > 0 ? DH.recordSeries(game.shots, game.hits) : null;
+        game.shots = 0;
+        game.hits = 0;
+        game.impacts.length = 0;
+        var msg = document.getElementById('pause-msg');
+        if (msg) {
+          msg.textContent = rec
+            ? 'Серия записана (' + rec.hits + '/' + rec.shots + ', ' + Math.round(rec.acc) + '%), счёт обнулён.'
+            : 'Счёт обнулён.';
+        }
+      });
+    }
 
     updateCameraBasis();
     requestAnimationFrame(function (t) { last = t; requestAnimationFrame(loop); });

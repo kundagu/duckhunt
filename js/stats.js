@@ -5,7 +5,7 @@
   var DH = (window.DH = window.DH || {});
 
   var STORAGE_KEY = 'dh.stats.v1';
-  var MAX_SERIES = 20; /* сколько последних серий хранить/показывать */
+  var MAX_SERIES = 8; /* сколько лучших серий хранить/показывать */
   /* Серии короче этого числа выстрелов не претендуют на «лучший результат»:
      единичные выстрелы (например, выйти в меню после одного выстрела)
      давали бессмысленный «лучший результат 0 из 1 (0%)». */
@@ -35,6 +35,20 @@
     return a.shots > b.shots;
   }
 
+  /* Сравнение для сортировки списка: от лучшей серии к худшей. */
+  function compareSeries(a, b) {
+    if (a.acc !== b.acc) return b.acc - a.acc;
+    if (a.hits !== b.hits) return b.hits - a.hits;
+    return b.shots - a.shots;
+  }
+
+  /* Оставляет в списке только MAX_SERIES лучших серий. */
+  function trimSeries(series) {
+    series.sort(compareSeries);
+    if (series.length > MAX_SERIES) series.length = MAX_SERIES;
+    return series;
+  }
+
   /* Кандидат в лучшие: только серии от MIN_BEST_SHOTS выстрелов */
   function betterCandidate(rec, best) {
     if (!rec || rec.shots < MIN_BEST_SHOTS) return best;
@@ -56,7 +70,7 @@
         var rec = validRec(s.series[i]);
         if (rec) out.series.push(rec);
       }
-      if (out.series.length > MAX_SERIES) out.series.splice(0, out.series.length - MAX_SERIES);
+      trimSeries(out.series);
     }
 
     /* Лучший: сохранённый (если валиден и достаточно длинный — защита от
@@ -86,8 +100,8 @@
 
     var s = DH.loadStats();
     s.series.push(rec);
-    if (s.series.length > MAX_SERIES) s.series.splice(0, s.series.length - MAX_SERIES);
     s.best = betterCandidate(rec, s.best);
+    trimSeries(s.series);
     DH.saveStats(s);
     DH.updateStats();
     return rec;
@@ -115,14 +129,8 @@
       return;
     }
 
-    /* Сортировка по проценту попадания (по убыванию); при равенстве —
-       больше попаданий, затем больше выстрелов. Нулевые и короткие серии
-       уходят в низ списка, а не наверх. */
-    var sorted = s.series.slice().sort(function (a, b) {
-      if (a.acc !== b.acc) return b.acc - a.acc;
-      if (a.hits !== b.hits) return b.hits - a.hits;
-      return b.shots - a.shots;
-    });
+    /* loadStats уже оставил MAX_SERIES лучших серий и отсортировал их. */
+    var sorted = s.series;
 
     var html = '';
     for (var i = 0; i < sorted.length; i++) {
